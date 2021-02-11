@@ -5,11 +5,14 @@ import static org.slf4j.LoggerFactory.getLogger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.StringUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.By.ByClassName;
+import org.openqa.selenium.By.ByName;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.slf4j.Logger;
@@ -33,7 +36,10 @@ public class MainServiceImpl implements MainService {
 	@Value("${url.investing.economic.calendar}")
 	private String URL_INVESTING;
 	
-	private WebDriver setupSelenium() {
+	@Value("${wait.seconds}")
+	private Long WAIT;
+	
+	private WebDriver setupSelenium() throws Exception{
 		System.setProperty("webdriver.chrome.driver", "chromedriver.exe");
 		ChromeOptions options = new ChromeOptions();
 		options.addArguments("--headless");
@@ -42,23 +48,36 @@ public class MainServiceImpl implements MainService {
 		
 		return driver;
 	}
-
-	private Optional<ChecadorNoticia> parseRowToEntity(WebElement row, List<WebElement> cols) {
-		String diaHora = row.getAttribute("data-event-datetime");
+	
+	private void killChromeProcess() throws Exception {
+		Runtime.getRuntime().exec("taskkill /F /IM chromedriver.exe /T");
+		Runtime.getRuntime().exec("taskkill /F /IM chrome.exe /T");
+	}
+	
+	
+	private Optional<ChecadorNoticia> parseRowToEntity(WebElement row, List<WebElement> cols)  {
+		String diaHora = StringUtils.trimToEmpty(row.getAttribute("data-event-datetime"));
 		if(StringUtils.isNotBlank(diaHora)) {
-			//String dia = diaHora.substring(0, 5);
-			//String hora = diaHora.substring(6, 10);
-			String pais = cols.get(2).getText();
-			System.out.println("Importancia : " + cols.get(3).getText());
-			System.out.println("Evento : " + cols.get(4).getText());
-			System.out.println("Atual : " + cols.get(5).getText());
-			System.out.println("Projecao : " + cols.get(6).getText());
-			System.out.println("Previo : " + cols.get(7).getText());
+			String dia = StringUtils.trimToEmpty(diaHora.substring(0, 10));
+			String hora = StringUtils.trimToEmpty(diaHora.substring(11, 16));
+			String pais = StringUtils.trimToEmpty(cols.get(1).getText());
+			String forca = StringUtils.replace(StringUtils.trimToEmpty(cols.get(2).getAttribute("data-img_key")), "bull", "");
+			String evento = StringUtils.trimToEmpty(cols.get(3).getText());
+			String isDiscurso = cols.get(3).findElements(ByClassName.className("audioIconNew")).isEmpty() ? "False" : "True";
+			String atual = StringUtils.trimToEmpty(cols.get(4).getText());
+			String projecao = StringUtils.trimToEmpty(cols.get(5).getText());
+			String previo = StringUtils.trimToEmpty(cols.get(6).getText());
 			
 			return Optional.of(ChecadorNoticia.builder()
-					//.dia(dia)
-					//.hora(hora)
+					.dia(dia)
+					.hora(hora)
 					.pais(pais)
+					.forca(forca)
+					.isDiscurso(isDiscurso)
+					.evento(evento)
+					.atual(atual)
+					.projecao(projecao)
+					.previo(previo)
 					.build());			
 		}else {
 			return Optional.empty();
@@ -67,25 +86,37 @@ public class MainServiceImpl implements MainService {
 	}
 
 	@Override
-	public void execute() {
+	public void execute() throws Exception {
+		this.killChromeProcess();
 		WebDriver driver = this.setupSelenium();
-		WebElement table = driver.findElement(By.id("economicCalendarData"));
-		List<WebElement> rows = table.findElements(By.tagName("tr"));
-		List<ChecadorNoticia> checadorNoticias = new ArrayList<ChecadorNoticia>();
 		
-		rows.stream().forEach(row -> {
-			List<WebElement> cols = table.findElements(By.tagName("td"));
+		while(true) {
+			WebElement table = driver.findElement(By.id("economicCalendarData"));
+			WebElement body = table.findElement(By.tagName("tbody"));
+			List<WebElement> rows = body.findElements(By.tagName("tr"));
+			List<ChecadorNoticia> checadorNoticias = new ArrayList<ChecadorNoticia>();
 			
-			if(parseRowToEntity(row, cols).isPresent()) {
-				checadorNoticias.add(parseRowToEntity(row, cols).get());	
-			}
-			
-		});
-
-		driver.close();
-		driver.quit();
+			rows.stream().forEach(row -> {
+				List<WebElement> cols = row.findElements(By.tagName("td"));
+				
+				if(parseRowToEntity(row, cols).isPresent()) {
+					ChecadorNoticia newChecadorNoticia = parseRowToEntity(row, cols).get();
+					ChecadorNoticia oldChecadorNoticia = this.checadorNoticiaService.getByDiaHoraPaisEvento(newChecadorNoticia.getDia(), newChecadorNoticia.getHora(), newChecadorNoticia.getPais(), newChecadorNoticia.getEvento());
+					
+					if(oldChecadorNoticia != null) {
+						newChecadorNoticia.setId(oldChecadorNoticia.getId());
+					}
+					
+					checadorNoticias.add(newChecadorNoticia);
+				}
+				
+			});
+			LOG.info("Salvando noticias no BD");
+			this.checadorNoticiaService.save(checadorNoticias);
+			LOG.info(checadorNoticias.toString());
+			Thread.sleep(WAIT);
+		}		
 		
-		this.checadorNoticiaService.save(checadorNoticias);
 	}
 	
 	

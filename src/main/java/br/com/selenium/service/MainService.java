@@ -2,6 +2,6 @@ package br.com.selenium.service;
 
 public interface MainService {
 
-	void execute();
+	void execute() throws Exception;
 
 }
