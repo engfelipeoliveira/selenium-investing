@@ -5,14 +5,12 @@ import static org.slf4j.LoggerFactory.getLogger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.StringUtils;
 import org.openqa.selenium.By;
+import org.openqa.selenium.By.ByClassName;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
-import org.openqa.selenium.By.ByClassName;
-import org.openqa.selenium.By.ByName;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.slf4j.Logger;
@@ -49,12 +47,6 @@ public class MainServiceImpl implements MainService {
 		return driver;
 	}
 	
-	private void killChromeProcess() throws Exception {
-		Runtime.getRuntime().exec("taskkill /F /IM chromedriver.exe /T");
-		Runtime.getRuntime().exec("taskkill /F /IM chrome.exe /T");
-	}
-	
-	
 	private Optional<ChecadorNoticia> parseRowToEntity(WebElement row, List<WebElement> cols)  {
 		String diaHora = StringUtils.trimToEmpty(row.getAttribute("data-event-datetime"));
 		if(StringUtils.isNotBlank(diaHora)) {
@@ -87,7 +79,6 @@ public class MainServiceImpl implements MainService {
 
 	@Override
 	public void execute() throws Exception {
-		this.killChromeProcess();
 		WebDriver driver = this.setupSelenium();
 		
 		while(true) {
